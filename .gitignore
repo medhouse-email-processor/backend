@@ -134,3 +134,9 @@ downloads/
 
 # credentials
 config/token.json
+
+# SSH Keys
+deploy_key
+deploy_key.pub
+*.pem
+*.key
