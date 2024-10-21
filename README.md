@@ -1,4 +1,4 @@
-# MedHouse KZ Email Processing Frontend
+# MedHouse KZ Email Processing Backend
 
 ## Overview
 
