@@ -18,8 +18,6 @@ exports.fetchAndDownloadOrders = async (req, res) => {
     }
 
     try {
-        ensureDownloadDirExists()
-
         const sender = await Sender.findByPk(senderId)
         if (!sender) {
             return res.status(404).json({ success: false, message: 'Sender not found.' })
@@ -51,9 +49,7 @@ exports.fetchAndDownloadOrders = async (req, res) => {
 
         const mainFolderName = `${sender.companyName}_${day}`
         const mainFolderPath = path.join(__dirname, '../downloads', mainFolderName)
-        if (!fs.existsSync(mainFolderPath)) {
-            fs.mkdirSync(mainFolderPath, { recursive: true })
-        }
+        ensureDownloadDirExists(mainFolderPath)
 
         const cities = sender.cities
 
@@ -134,15 +130,17 @@ exports.fetchAndDownloadOrders = async (req, res) => {
     }
 }
 
-const ensureDownloadDirExists = () => {
+const ensureDownloadDirExists = (mainFolderPath) => {
     const downloadDir = path.join(__dirname, '..', 'downloads')
-
     if (!fs.existsSync(downloadDir)) {
         fs.mkdirSync(downloadDir)
-    } else {
-        const files = fs.readdirSync(downloadDir)
+    }
+
+    // Clear only the specific folder (mainFolderName)
+    if (fs.existsSync(mainFolderPath)) {
+        const files = fs.readdirSync(mainFolderPath)
         for (const file of files) {
-            const filePath = path.join(downloadDir, file)
+            const filePath = path.join(mainFolderPath, file)
 
             if (fs.statSync(filePath).isDirectory()) {
                 fs.rmSync(filePath, { recursive: true, force: true })
@@ -150,5 +148,8 @@ const ensureDownloadDirExists = () => {
                 fs.unlinkSync(filePath)
             }
         }
+    } else {
+        // If the folder doesn't exist, create it
+        fs.mkdirSync(mainFolderPath, { recursive: true })
     }
 }

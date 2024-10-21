@@ -140,3 +140,5 @@ deploy_key
 deploy_key.pub
 *.pem
 *.key
+
+.DS_Store

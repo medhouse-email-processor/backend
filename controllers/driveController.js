@@ -25,13 +25,16 @@ async function authenticate() {
 }
 
 // Function to clear the provided Google Drive folder before upload
+// Function to clear the files inside the specified Google Drive folder, without deleting other folders
 async function clearDriveFolder(drive, folderId) {
     try {
+        // List files in the specified folder
         const files = await drive.files.list({
-            q: `'${folderId}' in parents`,
+            q: `'${folderId}' in parents and mimeType != 'application/vnd.google-apps.folder'`, // List files only, not subfolders
             fields: 'files(id, name)',
         })
 
+        // Delete each file inside the folder
         for (const file of files.data.files) {
             await drive.files.delete({ fileId: file.id })
             console.log(`Deleted file ${file.name} from folder ${folderId}`)
