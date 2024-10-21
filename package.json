@@ -1,7 +1,7 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "app.js",
   "scripts": {
     "migrate": "npx sequelize-cli db:migrate",
     "dev": "nodemon start app.js",
