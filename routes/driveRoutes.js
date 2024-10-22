@@ -33,24 +33,39 @@ router.get('/oauth2callback', (req, res) => {
 
         // Save token for later use
         fs.writeFileSync(TOKEN_PATH, JSON.stringify(token))
-        res.send('Authentication successful! You can now upload files.')
+
+        // Redirect back to the frontend's initial page after authentication
+        res.redirect(`${process.env.FRONTEND_URL}/?authSuccess=true`)
     })
 })
 
 // Route 3: Upload Files to Google Drive
+// Route 3: Upload Files to Google Drive
 router.post('/upload', async (req, res) => {
     const { mainFolderName, folderId } = req.body // Array of file paths and optional folder ID
 
-    if (!mainFolderName)
+    if (!mainFolderName) {
         return res.json({ success: false, message: 'mainFolderName not specified' })
+    }
 
     try {
-        await uploadToDrive(mainFolderName, folderId) // Call the controller function
-        res.json({ success: true, message: 'Files uploaded successfully!' })
+        // Call the controller function to upload files to Google Drive
+        await uploadToDrive(mainFolderName, folderId)
+        
+        // Delete the token.json file after successful upload
+        if (fs.existsSync(TOKEN_PATH)) {
+            fs.unlinkSync(TOKEN_PATH)
+            console.log('token.json deleted after upload.')
+        }
+        
+        // Respond with success
+        res.json({ success: true, message: 'Files uploaded successfully and token.json deleted!' })
     } catch (err) {
+        // Handle errors during file upload
         res.status(500).json({ success: false, message: 'Error uploading files: ' + err.message })
     }
 })
+
 
 // Route 4: Check if the user is authenticated
 router.get('/auth/check', (req, res) => {

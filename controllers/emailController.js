@@ -12,7 +12,7 @@ pino.level = 'silent'
 exports.fetchAndDownloadOrders = async (req, res) => {
     const { senderId, day } = req.body
 
-    const targetDate = moment(day, 'YYYY-MM-DD')
+    const targetDate = moment.utc(day, 'YYYY-MM-DD')
     if (!targetDate.isValid()) {
         return res.status(400).json({ success: false, message: 'Invalid date format, use YYYY-MM-DD.' })
     }
@@ -35,7 +35,7 @@ exports.fetchAndDownloadOrders = async (req, res) => {
             },
             logger: pino,
         })
-
+		
         await client.connect()
         await client.mailboxOpen('INBOX')
 
@@ -120,8 +120,11 @@ exports.fetchAndDownloadOrders = async (req, res) => {
 
         res.json({
             success: true,
+			messages,
             fetchedFiles,
             mainFolderName,
+			sender,
+            tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
             message: `Fetched and downloaded attachments for sender ${sender.email} on ${day}.`,
         })
     } catch (err) {
