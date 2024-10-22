@@ -1,19 +1,9 @@
 const express = require('express')
 const router = express.Router()
 const fs = require('fs')
-const { google } = require('googleapis')
 const { uploadToDrive } = require('../controllers/driveController')
+const { authCheck, TOKEN_PATH, oAuth2Client } = require('../middlewares/driveAuth')
 require('dotenv').config() // Load environment variables
-
-// OAuth2 Client Setup
-const oAuth2Client = new google.auth.OAuth2(
-    process.env.GDRIVE_CLIENT_ID,
-    process.env.GDRIVE_CLIENT_SECRET,
-    process.env.GDRIVE_REDIRECT_URI
-)
-
-// Token path (to store OAuth2 access token)
-const TOKEN_PATH = 'config/token.json'
 
 // Route 1: Start OAuth Authorization
 router.get('/auth', (req, res) => {
@@ -39,10 +29,9 @@ router.get('/oauth2callback', (req, res) => {
     })
 })
 
-// Route 3: Upload Files to Google Drive
-// Route 3: Upload Files to Google Drive
-router.post('/upload', async (req, res) => {
-    const { mainFolderName, folderId } = req.body // Array of file paths and optional folder ID
+// Route 3: Upload Files to Google Drive (Protected Route with authCheck middleware)
+router.post('/upload', authCheck, async (req, res) => {
+    const { mainFolderName, folderId } = req.body
 
     if (!mainFolderName) {
         return res.json({ success: false, message: 'mainFolderName not specified' })
@@ -51,35 +40,32 @@ router.post('/upload', async (req, res) => {
     try {
         // Call the controller function to upload files to Google Drive
         await uploadToDrive(mainFolderName, folderId)
-        
+
         // Delete the token.json file after successful upload
         if (fs.existsSync(TOKEN_PATH)) {
             fs.unlinkSync(TOKEN_PATH)
             console.log('token.json deleted after upload.')
         }
-        
+
         // Respond with success
         res.json({ success: true, message: 'Files uploaded successfully and token.json deleted!' })
     } catch (err) {
-        // Handle errors during file upload
         res.status(500).json({ success: false, message: 'Error uploading files: ' + err.message })
     }
 })
 
-
 // Route 4: Check if the user is authenticated
 router.get('/auth/check', (req, res) => {
     try {
-        // Check if the token file exists and is valid
         if (fs.existsSync(TOKEN_PATH)) {
             const token = JSON.parse(fs.readFileSync(TOKEN_PATH))
             oAuth2Client.setCredentials(token)
 
-            // Check if the token is still valid
             oAuth2Client.getAccessToken((err, accessToken) => {
-                if (err) {
+                if (err || !accessToken) {
                     res.json({
-                        authenticated: false, authUrl: oAuth2Client.generateAuthUrl({
+                        authenticated: false,
+                        authUrl: oAuth2Client.generateAuthUrl({
                             access_type: 'offline',
                             scope: ['https://www.googleapis.com/auth/drive.file'],
                         })
@@ -89,7 +75,6 @@ router.get('/auth/check', (req, res) => {
                 }
             })
         } else {
-            // If no token, return the auth URL for login
             const authUrl = oAuth2Client.generateAuthUrl({
                 access_type: 'offline',
                 scope: ['https://www.googleapis.com/auth/drive.file'],
