@@ -12,12 +12,12 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "archiver": "^7.0.1",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "googleapis": "^144.0.0",
     "imapflow": "^1.0.164",
     "mysql2": "^3.11.3",
-    "node-imap": "^0.9.6",
     "nodemon": "^3.1.7",
     "pino": "^9.5.0",
     "sequelize": "^6.37.4",
