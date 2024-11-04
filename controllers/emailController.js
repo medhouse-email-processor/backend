@@ -136,7 +136,10 @@ exports.fetchAndDownloadOrders = async (req, res) => {
         })
     } catch (err) {
         console.error('Error fetching orders:', err)
-        res.status(500).json({ success: false, message: 'Error fetching orders.' })
+        let message = 'Error fetching orders.'
+        if (err?.code === 'ECONNREFUSED')
+            message = 'mail.ru not responding. Please, try later.'
+        res.status(500).json({ success: false, message })
     }
 }
 
@@ -160,5 +163,15 @@ const ensureDownloadDirExists = (mainFolderPath) => {
     } else {
         // If the folder doesn't exist, create it
         fs.mkdirSync(mainFolderPath, { recursive: true })
+    }
+}
+
+exports.getSenders = async (req, res) => {
+    try {
+        const senders = await Sender.findAll()
+        return res.json(senders)
+    } catch (error) {
+        console.error('Error fetching senders:', error)
+        res.status(500).json({ error: 'Failed to fetch senders' })
     }
 }
