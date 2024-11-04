@@ -44,9 +44,24 @@ router.get('/oauth2callback', async (req, res) => {
 })
 
 router.post('/upload', authCheck, async (req, res) => {
-    const { mainFolderName, folderId } = req.body
+    const { mainFolderName, folderId: folderIdParam } = req.body
+    let folderId = null
 
     try {
+        // Check if folderIdParam is a full URL or just an ID
+        if (folderIdParam) {
+            folderId = folderIdParam.startsWith('https://drive.google.com/drive/folders/')
+                ? folderIdParam.split('/').pop() // Extract the ID from the URL
+                : folderIdParam
+        }
+
+        // Update folderId in UserAuth if it's a valid ID
+        if (folderId) {
+            const googleUserId = req.user.googleUserId
+            await UserAuth.update({ folderId }, { where: { googleUserId } })
+        }
+
+        // Proceed with the upload using the resolved folderId
         await uploadToDrive(mainFolderName, folderId)
         res.json({ success: true, message: 'Files uploaded successfully!' })
     } catch (err) {

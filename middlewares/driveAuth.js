@@ -32,6 +32,8 @@ exports.authCheck = async (req, res, next) => {
             return res.status(401).json({ authenticated: false })
         }
 
+        req.user = { googleUserId }
+
         next()
     } catch (err) {
         return res.status(401).json({ authenticated: false, error: 'Invalid or expired tokens' })
