@@ -73,4 +73,24 @@ router.get('/auth/check', authCheck, (req, res) => {
     res.json({ authenticated: true })
 })
 
+router.get('/folder-id', authCheck, async (req, res) => {
+    const googleUserId = req.user.googleUserId
+
+    try {
+        // Retrieve the folderId for the authenticated user
+        const userAuth = await UserAuth.findOne({
+            where: { googleUserId },
+            attributes: ['folderId'],
+        })
+
+        if (userAuth && userAuth.folderId) {
+            res.json({ success: true, folderId: userAuth.folderId })
+        } else {
+            res.json({ success: true, folderId: null }) // No folderId stored
+        }
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'Error retrieving folder ID: ' + err.message })
+    }
+})
+
 module.exports = router
