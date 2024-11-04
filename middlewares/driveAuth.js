@@ -1,49 +1,39 @@
-const fs = require('fs')
+// authController.js
 const { google } = require('googleapis')
+const UserAuth = require('../models/userAuthModel')
+require('dotenv').config()
 
-// Token path (to store OAuth2 access token)
-exports.TOKEN_PATH = 'config/token.json'
+exports.SCOPES = [
+    'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/userinfo.profile'
+]
 
-// OAuth2 Client Setup
 exports.oAuth2Client = new google.auth.OAuth2(
     process.env.GDRIVE_CLIENT_ID,
     process.env.GDRIVE_CLIENT_SECRET,
     process.env.GDRIVE_REDIRECT_URI
 )
 
-// Middleware: Check if the user is authenticated
 exports.authCheck = async (req, res, next) => {
-    try {
-        // Use the exported TOKEN_PATH and oAuth2Client directly
-        if (fs.existsSync(exports.TOKEN_PATH)) {
-            const token = JSON.parse(fs.readFileSync(exports.TOKEN_PATH))
-            exports.oAuth2Client.setCredentials(token)
+    const accessToken = req.headers.authorization?.split(' ')[1]
 
-            // Check if the token is still valid
-            exports.oAuth2Client.getAccessToken((err, accessToken) => {
-                if (err || !accessToken) {
-                    // If token is invalid or expired, return auth URL
-                    return res.status(401).json({
-                        authenticated: false,
-                        authUrl: exports.oAuth2Client.generateAuthUrl({
-                            access_type: 'offline',
-                            scope: ['https://www.googleapis.com/auth/drive.file'],
-                        })
-                    })
-                } else {
-                    // Token is valid, proceed to the next middleware/route
-                    next()
-                }
-            })
-        } else {
-            // No token available, return auth URL
-            const authUrl = exports.oAuth2Client.generateAuthUrl({
-                access_type: 'offline',
-                scope: ['https://www.googleapis.com/auth/drive.file'],
-            })
-            return res.status(401).json({ authenticated: false, authUrl })
+    if (!accessToken) {
+        return res.status(401).json({ authenticated: false })
+    }
+
+    try {
+        exports.oAuth2Client.setCredentials({ access_token: accessToken })
+
+        const tokenInfo = await exports.oAuth2Client.getTokenInfo(accessToken)
+        const googleUserId = tokenInfo.sub
+
+        const userAuth = await UserAuth.findOne({ where: { googleUserId } })
+        if (!userAuth || userAuth.googleUserId !== googleUserId) {
+            return res.status(401).json({ authenticated: false })
         }
+
+        next()
     } catch (err) {
-        return res.status(500).json({ authenticated: false, error: err.message })
+        return res.status(401).json({ authenticated: false, error: 'Invalid or expired tokens' })
     }
 }
