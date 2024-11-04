@@ -12,7 +12,7 @@ pino.level = 'silent'
 
 exports.fetchAndDownloadOrders = async (req, res) => {
     console.log('Email Fetch Request detected...')
-    const { senderId, day, download } = req.body
+    const { senderId, day, saveFolder } = req.body
     const targetDate = moment.utc(day, 'YYYY-MM-DD')
 
     if (!targetDate.isValid()) {
@@ -98,50 +98,45 @@ exports.fetchAndDownloadOrders = async (req, res) => {
 
         await client.logout()
 
-        // Ensure the downloads directory exists
         const downloadsDir = path.join(__dirname, '../public/downloads')
         if (!fs.existsSync(downloadsDir)) {
             fs.mkdirSync(downloadsDir, { recursive: true })
         }
 
-        // If "download" is set to true, zip the folder
-        if (download) {
-            const zipPath = path.join(downloadsDir, `${mainFolderName}.zip`)
-            const output = fs.createWriteStream(zipPath)
-            const archive = archiver('zip', { zlib: { level: 9 } })
+        const zipPath = path.join(downloadsDir, `${mainFolderName}.zip`)
+        const output = fs.createWriteStream(zipPath)
+        const archive = archiver('zip', { zlib: { level: 9 } })
 
-            output.on('close', () => console.log(`Archive created: ${archive.pointer()} bytes`))
-            archive.on('error', (err) => console.error('Error creating archive:', err))
+        output.on('close', () => console.log(`Archive created: ${archive.pointer()} bytes`))
+        archive.on('error', (err) => console.error('Error creating archive:', err))
 
-            archive.pipe(output)
-            archive.directory(mainFolderPath, false)
-            await archive.finalize()
+        archive.pipe(output)
+        archive.directory(mainFolderPath, false)
+        await archive.finalize()
 
-            return res.json({
-                success: true,
-                messages,
-                fetchedFiles,
-                mainFolderName,
-                downloadUrl: `downloads/${mainFolderName}.zip`,
-                message: `Fetched and downloaded attachments for sender ${sender.email} on ${day}.`,
-            })
+        if (!saveFolder) {
+            fs.rmSync(mainFolderPath, { recursive: true, force: true })
+            console.log(`Deleted folder: ${mainFolderPath}`)
         }
 
-        res.json({
+        return res.json({
             success: true,
             messages,
             fetchedFiles,
             mainFolderName,
+            downloadUrl: `downloads/${mainFolderName}.zip`,
             message: `Fetched and downloaded attachments for sender ${sender.email} on ${day}.`,
         })
     } catch (err) {
         console.error('Error fetching orders:', err)
         let message = 'Error fetching orders.'
-        if (err?.code === 'ECONNREFUSED')
+        if (err?.code === 'ECONNREFUSED') {
             message = 'mail.ru not responding. Please, try later.'
+        }
         res.status(500).json({ success: false, message })
     }
 }
+
 
 const ensureDownloadDirExists = (mainFolderPath) => {
     const downloadDir = path.join(__dirname, '..', 'downloads')

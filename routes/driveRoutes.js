@@ -32,6 +32,8 @@ router.get('/oauth2callback', (req, res) => {
 // Route 3: Upload Files to Google Drive (Protected Route with authCheck middleware)
 router.post('/upload', authCheck, async (req, res) => {
     const { mainFolderName, folderId } = req.body
+    console.log('Orders Upload Request detected...')
+    console.log('folderId:', folderId)
 
     if (!mainFolderName) {
         return res.json({ success: false, message: 'mainFolderName not specified' })
@@ -43,8 +45,8 @@ router.post('/upload', authCheck, async (req, res) => {
 
         // Delete the token.json file after successful upload
         if (fs.existsSync(TOKEN_PATH)) {
-            fs.unlinkSync(TOKEN_PATH)
-            console.log('token.json deleted after upload.')
+            // fs.unlinkSync(TOKEN_PATH)
+            // console.log('token.json deleted after upload.')
         }
 
         // Respond with success

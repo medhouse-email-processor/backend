@@ -123,7 +123,7 @@ async function uploadToDrive(mainFolderName, folderId = null) {
         }
 
         // Delete the main folder after all files are uploaded and deleted
-        fs.rmdirSync(mainFolderPath, { recursive: true })
+        fs.rmSync(mainFolderPath, { recursive: true })
         console.log(`Folder ${mainFolderPath} deleted successfully.`)
     } catch (error) {
         console.error('Error uploading files:', error)
