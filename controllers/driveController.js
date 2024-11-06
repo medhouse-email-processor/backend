@@ -3,9 +3,10 @@ const path = require('path')
 const { google } = require('googleapis')
 const { oAuth2Client } = require('../middlewares/driveAuth')
 require('dotenv').config() // Load environment variables from .env
+const { sendProgressUpdate } = require('../middlewares/progressTracker')
 
 // Function to clear files inside a specified Google Drive folder
-async function clearDriveFolder(drive, folderId) {
+const clearDriveFolder = async (drive, folderId) => {
     try {
         const files = await drive.files.list({
             q: `'${folderId}' in parents and mimeType != 'application/vnd.google-apps.folder'`,
@@ -23,7 +24,7 @@ async function clearDriveFolder(drive, folderId) {
 }
 
 // Recursively retrieves all files with paths in a directory
-function getAllFilesWithStructure(dirPath, basePath = '', arrayOfFiles = []) {
+const getAllFilesWithStructure = (dirPath, basePath = '', arrayOfFiles = []) => {
     const files = fs.readdirSync(dirPath)
 
     files.forEach((file) => {
@@ -41,34 +42,28 @@ function getAllFilesWithStructure(dirPath, basePath = '', arrayOfFiles = []) {
 }
 
 // Main function to upload files to Google Drive, preserving structure
-async function uploadToDrive(mainFolderName, folderId = null) {
+exports.uploadToDrive = async (googleUserId, mainFolderName, folderId = null) => {
     try {
         const drive = google.drive({ version: 'v3', auth: oAuth2Client })
 
-        // Clear specified Google Drive folder if folderId is provided
         if (folderId) {
             await clearDriveFolder(drive, folderId)
         }
 
-        // Define the local path of the main folder
         const mainFolderPath = path.join(__dirname, '../downloads', mainFolderName)
 
-        // Check if the main folder exists locally
         if (!fs.existsSync(mainFolderPath) || !fs.statSync(mainFolderPath).isDirectory()) {
             throw new Error(`The folder "${mainFolderName}" does not exist in the "downloads" directory.`)
         }
 
-        // Ensure the main folder exists on Google Drive
         const mainFolderId = await ensureDriveFolder(drive, mainFolderName, folderId)
-
-        // Retrieve all files from the local main folder, preserving folder structure
         const fileList = getAllFilesWithStructure(mainFolderPath)
+        const totalFiles = fileList.length
+        let uploadedFiles = 0
 
-        // Create folders and upload files with structure
         for (const { filePath, relativePath } of fileList) {
             let folderIdForFile = mainFolderId
 
-            // Create subfolders on Google Drive for files in subdirectories
             if (relativePath.includes(path.sep)) {
                 const subFolderStructure = relativePath.split(path.sep).slice(0, -1)
                 for (const folderName of subFolderStructure) {
@@ -94,22 +89,30 @@ async function uploadToDrive(mainFolderName, folderId = null) {
 
             console.log(`File ${filePath} uploaded successfully. File ID: ${response.data.id}`)
 
-            // Remove the file after a successful upload
             fs.unlinkSync(filePath)
             console.log(`File ${filePath} deleted after upload.`)
+
+            uploadedFiles++
+            const progress = Math.floor((uploadedFiles / totalFiles) * 100)
+            sendProgressUpdate(googleUserId, {
+                status: `Uploaded ${path.basename(filePath)} to Drive.`,
+                progress: progress,
+            })
         }
 
-        // Remove the main folder after all files are uploaded and deleted
         fs.rmSync(mainFolderPath, { recursive: true })
         console.log(`Folder ${mainFolderPath} deleted successfully.`)
+        sendProgressUpdate(googleUserId, { status: 'Upload to Google Drive completed.', progress: 100 })
+
     } catch (error) {
         console.error('Error uploading files:', error)
+        sendProgressUpdate(googleUserId, { status: 'Error during upload.', progress: 0 })
         throw error
     }
 }
 
 // Ensure a folder exists on Google Drive, or create it if it doesn't
-async function ensureDriveFolder(drive, folderName, parentId) {
+const ensureDriveFolder = async (drive, folderName, parentId) => {
     const folderQuery = `'${parentId || 'root'}' in parents and name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder'`
     const folderResponse = await drive.files.list({
         q: folderQuery,
@@ -134,5 +137,3 @@ async function ensureDriveFolder(drive, folderName, parentId) {
         return folder.data.id
     }
 }
-
-module.exports = { uploadToDrive }

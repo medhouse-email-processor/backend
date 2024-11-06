@@ -46,6 +46,7 @@ router.get('/oauth2callback', async (req, res) => {
 router.post('/upload', authCheck, async (req, res) => {
     const { mainFolderName, folderId: folderIdParam } = req.body
     let folderId = null
+    const { googleUserId } = req.user
 
     try {
         // Check if folderIdParam is a full URL or just an ID
@@ -62,7 +63,7 @@ router.post('/upload', authCheck, async (req, res) => {
         }
 
         // Proceed with the upload using the resolved folderId
-        await uploadToDrive(mainFolderName, folderId)
+        await uploadToDrive(googleUserId, mainFolderName, folderId)
         res.json({ success: true, message: 'Files uploaded successfully!' })
     } catch (err) {
         res.status(500).json({ success: false, message: 'Error uploading files: ' + err.message })

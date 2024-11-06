@@ -5,6 +5,8 @@ const driveRoutes = require('./routes/driveRoutes')
 const adminRoutes = require('./routes/adminRoutes')
 const db = require('./config/db') // MySQL connection
 const path = require('path')
+const { authCheck } = require('./middlewares/driveAuth')
+const { monitorFetchProgress } = require('./middlewares/progressTracker')
 
 dotenv.config()
 
@@ -18,6 +20,7 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", "*")
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE')
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept")
+
     next()
 })
 
@@ -32,6 +35,14 @@ app.use('/api/admin', adminRoutes)
 app.get('/', (req, res) => {
     res.send('<h1>Welcome to the Email Processor server!</h1>')
 })
+
+app.get('/api/fetch-progress/:accessToken', (req, res, next) => {
+    const { accessToken } = req.params
+    if (accessToken) {
+        req.headers.authorization = `Bearer ${accessToken}`
+    }
+    next()
+}, authCheck, monitorFetchProgress)
 
 // Start the server
 const PORT = process.env.PORT || 5000

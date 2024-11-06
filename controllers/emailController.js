@@ -6,9 +6,11 @@ const { ImapFlow } = require('imapflow')
 const moment = require('moment')
 const pino = require('pino')()
 const { checkCellForCity } = require('./helpers')  // Moved the checkCellForCity function to a helper file
+let { sendProgressUpdate } = require('../middlewares/progressTracker')
 
 require('dotenv').config()
 pino.level = 'silent'
+
 
 exports.fetchAndDownloadOrders = async (req, res) => {
     console.log('Email Fetch Request detected...')
@@ -19,11 +21,16 @@ exports.fetchAndDownloadOrders = async (req, res) => {
         return res.status(400).json({ success: false, message: 'Invalid date format, use YYYY-MM-DD.' })
     }
 
+    const { googleUserId } = req.user
+
     try {
         const sender = await Sender.findByPk(senderId)
         if (!sender) {
             return res.status(404).json({ success: false, message: 'Sender not found.' })
         }
+
+        // Send initial progress update
+        sendProgressUpdate(googleUserId, { status: 'Connecting to email server...' })
 
         const client = new ImapFlow({
             host: 'imap.mail.ru',
@@ -37,11 +44,19 @@ exports.fetchAndDownloadOrders = async (req, res) => {
         })
 
         await client.connect()
+        sendProgressUpdate(googleUserId, { status: 'Connected. Opening inbox...' })
         await client.mailboxOpen('INBOX')
+        sendProgressUpdate(googleUserId, { status: 'Searching for messages...' })
 
         const messages = await client.search({ from: sender.email, on: targetDate.toDate() })
         const fetchedFiles = []
         const emailList = []
+        sendProgressUpdate(googleUserId, { status: `Found ${messages.length} messages.` })
+        const totalMessages = messages.length
+        let processedMessages = 0
+
+        // Start sending progress updates
+        const progressInterval = () => Math.floor((processedMessages / totalMessages) * 100)
 
         const mainFolderName = `${sender.companyName}_${day}`
         const mainFolderPath = path.join(__dirname, '../downloads', mainFolderName)
@@ -54,6 +69,8 @@ exports.fetchAndDownloadOrders = async (req, res) => {
             const downloadAttachments = async (parts, uid) => {
                 if (!parts) return []
                 const downloadedFiles = []
+                let attachmentCount = 0
+                const totalAttachments = parts.filter(part => part.disposition === 'attachment').length
 
                 for (const part of parts) {
                     const isExcel = part.dispositionParameters?.filename.endsWith('.xlsx') || part.dispositionParameters?.filename.endsWith('.xls')
@@ -79,8 +96,15 @@ exports.fetchAndDownloadOrders = async (req, res) => {
 
                         const savePath = path.join(cityFolderPath, attachmentFilename)
                         fs.writeFileSync(savePath, buffer)
-                        console.log(`Downloaded attachment: ${attachmentFilename} to folder: ${checkResult.success ? checkResult.city : 'city_undefined'}`)
                         downloadedFiles.push(attachmentFilename)
+
+                        // Increment and send progress update
+                        attachmentCount++
+                        const attachmentProgress = Math.floor(((processedMessages + (attachmentCount / totalAttachments)) / totalMessages) * 100)
+                        sendProgressUpdate(googleUserId, {
+                            status: `Downloaded attachment ${attachmentFilename} for message ${uid}.`,
+                            progress: attachmentProgress
+                        })
                     }
                 }
                 return downloadedFiles
@@ -94,9 +118,13 @@ exports.fetchAndDownloadOrders = async (req, res) => {
                 emailTo: message.envelope.to.map((recipient) => recipient.address).join(', '),
                 attachments: attachmentList,
             })
+            processedMessages++
+            sendProgressUpdate(googleUserId, { status: `Downloaded ${attachmentList.length} attachments for message ${uid}.`, progress: progressInterval() })
         }
 
         await client.logout()
+
+        sendProgressUpdate(googleUserId, { status: 'Process completed.', downloadUrl: `downloads/${mainFolderName}.zip`, progress: progressInterval() })
 
         const downloadsDir = path.join(__dirname, '../public/downloads')
         if (!fs.existsSync(downloadsDir)) {
@@ -136,7 +164,6 @@ exports.fetchAndDownloadOrders = async (req, res) => {
         res.status(500).json({ success: false, message })
     }
 }
-
 
 const ensureDownloadDirExists = (mainFolderPath) => {
     const downloadDir = path.join(__dirname, '..', 'downloads')
