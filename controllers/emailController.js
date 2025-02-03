@@ -30,12 +30,15 @@ exports.fetchAndDownloadOrders = async (req, res) => {
         }
 
         // Send initial progress update
-        sendProgressUpdate(googleUserId, { status: 'Connecting to email server...' })
+        sendProgressUpdate(googleUserId, { status: 'Подключаемся к серверу почтового ящика...' })
 
         const client = new ImapFlow({
             host: 'imap.mail.ru',
             port: 993,
             secure: true,
+            tls: {
+                rejectUnauthorized: false, // Try allowing self-signed certificates
+            },
             auth: {
                 user: process.env.HOST_EMAIL,
                 pass: process.env.HOST_PASS,
@@ -44,14 +47,14 @@ exports.fetchAndDownloadOrders = async (req, res) => {
         })
 
         await client.connect()
-        sendProgressUpdate(googleUserId, { status: 'Connected. Opening inbox...' })
+        sendProgressUpdate(googleUserId, { status: 'Подключились. Открываем ящик...' })
         await client.mailboxOpen('INBOX')
-        sendProgressUpdate(googleUserId, { status: 'Searching for messages...' })
+        sendProgressUpdate(googleUserId, { status: 'Ищем сообщения...' })
 
         const messages = await client.search({ from: sender.email, on: targetDate.toDate() })
         const fetchedFiles = []
         const emailList = []
-        sendProgressUpdate(googleUserId, { status: `Found ${messages.length} messages.` })
+        sendProgressUpdate(googleUserId, { status: `Нашли ${messages.length} сообщений.` })
         const totalMessages = messages.length
         let processedMessages = 0
 
@@ -102,7 +105,7 @@ exports.fetchAndDownloadOrders = async (req, res) => {
                         attachmentCount++
                         const attachmentProgress = Math.floor(((processedMessages + (attachmentCount / totalAttachments)) / totalMessages) * 100)
                         sendProgressUpdate(googleUserId, {
-                            status: `Downloaded attachment ${attachmentFilename} for message ${uid}.`,
+                            status: `Загрузили прикрепление ${attachmentFilename} из сообщения ${uid}.`,
                             progress: attachmentProgress
                         })
                     }
@@ -119,12 +122,12 @@ exports.fetchAndDownloadOrders = async (req, res) => {
                 attachments: attachmentList,
             })
             processedMessages++
-            sendProgressUpdate(googleUserId, { status: `Downloaded ${attachmentList.length} attachments for message ${uid}.`, progress: progressInterval() })
+            sendProgressUpdate(googleUserId, { status: `Загрузили ${attachmentList.length} прикреплений из сообщения ${uid}.`, progress: progressInterval() })
         }
 
         await client.logout()
 
-        sendProgressUpdate(googleUserId, { status: 'Process completed.', downloadUrl: `downloads/${mainFolderName}.zip`, progress: progressInterval() })
+        sendProgressUpdate(googleUserId, { status: 'Процесс завершен.', downloadUrl: `downloads/${mainFolderName}.zip`, progress: progressInterval() })
 
         const downloadsDir = path.join(__dirname, '../public/downloads')
         if (!fs.existsSync(downloadsDir)) {

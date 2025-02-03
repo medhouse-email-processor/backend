@@ -95,18 +95,18 @@ exports.uploadToDrive = async (googleUserId, mainFolderName, folderId = null) =>
             uploadedFiles++
             const progress = Math.floor((uploadedFiles / totalFiles) * 100)
             sendProgressUpdate(googleUserId, {
-                status: `Uploaded ${path.basename(filePath)} to Drive.`,
+                status: `Выгрузили ${path.basename(filePath)} в Google Drive.`,
                 progress: progress,
             })
         }
 
         fs.rmSync(mainFolderPath, { recursive: true })
         console.log(`Folder ${mainFolderPath} deleted successfully.`)
-        sendProgressUpdate(googleUserId, { status: 'Upload to Google Drive completed.', progress: 100 })
+        sendProgressUpdate(googleUserId, { status: 'Выгрузка в Google Drive завершена.', progress: 100 })
 
     } catch (error) {
         console.error('Error uploading files:', error)
-        sendProgressUpdate(googleUserId, { status: 'Error during upload.', progress: 0 })
+        sendProgressUpdate(googleUserId, { status: 'Ошибка при выгрузке.', progress: 0 })
         throw error
     }
 }

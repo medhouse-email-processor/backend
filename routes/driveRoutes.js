@@ -36,7 +36,6 @@ router.get('/oauth2callback', async (req, res) => {
                 refreshToken: token.refresh_token,
                 expiresAt,
             })
-            console.log('hey')
 
             res.redirect(`${process.env.FRONTEND_URL}/?authSuccess=true&accessToken=${token.access_token}&refreshToken=${token.refresh_token}`)
         } catch (userInfoError) {
