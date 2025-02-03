@@ -29,7 +29,7 @@ exports.fetchAndDownloadOrders = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Sender not found.' })
         }
 
-        // Send initial progress update
+        // Establish connection to the IMAP server
         sendProgressUpdate(googleUserId, { status: 'Подключаемся к серверу почтового ящика...' })
 
         const client = new ImapFlow({
@@ -49,26 +49,30 @@ exports.fetchAndDownloadOrders = async (req, res) => {
         await client.connect()
         sendProgressUpdate(googleUserId, { status: 'Подключились. Открываем ящик...' })
         await client.mailboxOpen('INBOX')
-        sendProgressUpdate(googleUserId, { status: 'Ищем сообщения...' })
 
+        // Search for emails from the sender on the target date
+        sendProgressUpdate(googleUserId, { status: 'Ищем сообщения...' })
         const messages = await client.search({ from: sender.email, on: targetDate.toDate() })
+
+        // Process each email message and download attachments
         const fetchedFiles = []
         const emailList = []
         sendProgressUpdate(googleUserId, { status: `Нашли ${messages.length} сообщений.` })
         const totalMessages = messages.length
         let processedMessages = 0
 
-        // Start sending progress updates
         const progressInterval = () => Math.floor((processedMessages / totalMessages) * 100)
 
         const mainFolderName = `${sender.companyName}_${day}`
         const mainFolderPath = path.join(__dirname, '../downloads', mainFolderName)
         ensureDownloadDirExists(mainFolderPath)
         const cities = sender.cities
+        const cellCoordinates = sender.cellCoordinates
 
         for (let uid of messages) {
             const message = await client.fetchOne(uid, { envelope: true, bodyStructure: true })
 
+            // Loop through email parts to find and download attachments
             const downloadAttachments = async (parts, uid) => {
                 if (!parts) return []
                 const downloadedFiles = []
@@ -88,7 +92,14 @@ exports.fetchAndDownloadOrders = async (req, res) => {
                         const buffer = Buffer.concat(chunks)
                         const fileType = attachmentFilename.endsWith('.xls') ? 'xls' : 'xlsx'
 
-                        const checkResult = checkCellForCity(buffer, fileType, 'F4', cities)
+                        // Iterate through cellCoordinates until a city is found
+                        let checkResult = { success: false }
+                        for (let cell of cellCoordinates) {
+                            checkResult = checkCellForCity(buffer, fileType, cell, cities)
+                            if (checkResult.success) break
+                        }
+
+                        // Determine the correct folder based on city detection result
                         let cityFolderPath = checkResult.success ? path.join(mainFolderPath, checkResult.city) : path.join(mainFolderPath, 'city_undefined')
 
                         fetchedFiles.push({ filename: attachmentFilename, city: checkResult.success ? checkResult.city : false })
@@ -97,6 +108,7 @@ exports.fetchAndDownloadOrders = async (req, res) => {
                             fs.mkdirSync(cityFolderPath, { recursive: true })
                         }
 
+                        // Save the downloaded attachment to the appropriate folder
                         const savePath = path.join(cityFolderPath, attachmentFilename)
                         fs.writeFileSync(savePath, buffer)
                         downloadedFiles.push(attachmentFilename)
@@ -127,6 +139,7 @@ exports.fetchAndDownloadOrders = async (req, res) => {
 
         await client.logout()
 
+        // Create a ZIP archive of downloaded files
         sendProgressUpdate(googleUserId, { status: 'Процесс завершен.', downloadUrl: `downloads/${mainFolderName}.zip`, progress: progressInterval() })
 
         const downloadsDir = path.join(__dirname, '../public/downloads')
@@ -145,6 +158,7 @@ exports.fetchAndDownloadOrders = async (req, res) => {
         archive.directory(mainFolderPath, false)
         await archive.finalize()
 
+        // Clean up downloaded files if saveFolder is not set
         if (!saveFolder) {
             fs.rmSync(mainFolderPath, { recursive: true, force: true })
             console.log(`Deleted folder: ${mainFolderPath}`)
