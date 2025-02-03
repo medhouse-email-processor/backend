@@ -152,7 +152,7 @@ exports.fetchAndDownloadOrders = async (req, res) => {
 
         return res.json({
             success: true,
-            messages,
+            messagesNum: messages.length,
             fetchedFiles,
             mainFolderName,
             downloadUrl: `downloads/${mainFolderName}.zip`,
