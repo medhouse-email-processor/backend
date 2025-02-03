@@ -9,6 +9,7 @@ require('dotenv').config()
 router.get('/auth', (req, res) => {
     const authUrl = oAuth2Client.generateAuthUrl({
         access_type: 'offline',
+        prompt: 'consent',
         scope: SCOPES,
     })
     res.json({ authUrl })
@@ -35,6 +36,7 @@ router.get('/oauth2callback', async (req, res) => {
                 refreshToken: token.refresh_token,
                 expiresAt,
             })
+            console.log('hey')
 
             res.redirect(`${process.env.FRONTEND_URL}/?authSuccess=true&accessToken=${token.access_token}&refreshToken=${token.refresh_token}`)
         } catch (userInfoError) {
@@ -51,10 +53,9 @@ router.post('/upload', authCheck, async (req, res) => {
     try {
         // Check if folderIdParam is a full URL or just an ID
         if (folderIdParam) {
-            folderId = folderIdParam.startsWith('https://drive.google.com/drive/folders/')
-                ? folderIdParam.split('/').pop() // Extract the ID from the URL
-                : folderIdParam
-        }
+            const match = folderIdParam.match(/[-\w]{25,}/) // Extracts a valid Google Drive ID
+            folderId = match ? match[0] : folderIdParam
+        }        
 
         // Update folderId in UserAuth if it's a valid ID
         if (folderId) {

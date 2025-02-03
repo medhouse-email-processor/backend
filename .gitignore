@@ -142,3 +142,7 @@ deploy_key.pub
 *.key
 
 .DS_Store
+.devcontainer/
+
+# Frontend
+frontend

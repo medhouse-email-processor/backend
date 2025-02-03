@@ -1,5 +1,6 @@
 const express = require('express')
 const dotenv = require('dotenv')
+
 const emailRoutes = require('./routes/emailRoutes')
 const driveRoutes = require('./routes/driveRoutes')
 const adminRoutes = require('./routes/adminRoutes')
@@ -27,14 +28,13 @@ app.use((req, res, next) => {
 // Serve static files from the 'public/downloads' directory
 app.use('/downloads', express.static(path.join(__dirname, 'public', 'downloads')))
 
-// Route handlers
+// Serve React frontend build
+app.use(express.static(path.join(__dirname, 'frontend', 'build')))
+
+// Route handlers (API)
 app.use('/api/email', emailRoutes)
 app.use('/api/drive', driveRoutes)
 app.use('/api/admin', adminRoutes)
-
-app.get('/', (req, res) => {
-    res.send('<h1>Welcome to the Email Processor server!</h1>')
-})
 
 app.get('/api/fetch-progress/:accessToken', (req, res, next) => {
     const { accessToken } = req.params
@@ -44,8 +44,13 @@ app.get('/api/fetch-progress/:accessToken', (req, res, next) => {
     next()
 }, authCheck, monitorFetchProgress)
 
+// Catch-all route to serve React's index.html
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'frontend', 'build', 'index.html'))
+})
+
 // Start the server
-const PORT = process.env.PORT || 5000
+const PORT = process.env.PORT || 5001
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`)
 })
