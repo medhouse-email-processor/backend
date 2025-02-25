@@ -1,238 +1,132 @@
 const fs = require('fs')
 const path = require('path')
-const archiver = require('archiver')
 const Sender = require('../models/senderModel')
-const { ImapFlow } = require('imapflow')
 const moment = require('moment')
 const pino = require('pino')()
-const { checkCellForCity } = require('./helpers')  // Moved the checkCellForCity function to a helper file
-let { sendProgressUpdate } = require('../middlewares/progressTracker')
-
+const { sendProgressUpdate } = require('../middlewares/progressTracker')
+const { connectToImap, determineCityFolder, ensureEmailFolderExists, moveEmailsToFolder } = require('../utils/emailHelpers')
+const { prepareDownloadFolder, createZipArchive, streamToBuffer } = require('../utils/fileHelpers')
 require('dotenv').config()
+
 pino.level = 'silent'
 
-
+// Функция для получения и загрузки заказов из электронной почты
 exports.fetchAndDownloadOrders = async (req, res) => {
-    console.log('Email Fetch Request detected...')
+    console.log('Обнаружен запрос на получение электронной почты...')
     const { senderId, day, saveFolder } = req.body
     const targetDate = moment.utc(day, 'YYYY-MM-DD')
 
+    // Проверка формата даты
     if (!targetDate.isValid()) {
-        return res.status(400).json({ success: false, message: 'Invalid date format, use YYYY-MM-DD.' })
+        return res.status(400).json({ success: false, message: 'Неверный формат даты, используйте YYYY-MM-DD.' })
     }
 
     const { googleUserId } = req.user
 
     try {
+        // Получаем отправителя из базы данных
         const sender = await Sender.findByPk(senderId)
-        if (!sender) {
-            return res.status(404).json({ success: false, message: 'Sender not found.' })
-        }
+        if (!sender) return res.status(404).json({ success: false, message: 'Отправитель не найден.' })
 
-        // Establish connection to the IMAP server
-        sendProgressUpdate(googleUserId, { status: 'Подключаемся к серверу почтового ящика...' })
-
-        const client = new ImapFlow({
-            // host: 'imap.mail.ru',
-            host: 'pkz41.hoster.kz',
-            port: 993,
-            // port: 143,
-            secure: true,
-            tls: {
-                rejectUnauthorized: false, // Try allowing self-signed certificates
-            },
-            auth: {
-                user: process.env.HOST_EMAIL,
-                pass: process.env.HOST_PASS,
-            },
-            logger: pino,
-        })
-
-        await client.connect()
-        sendProgressUpdate(googleUserId, { status: 'Подключились. Открываем ящик...' })
+        // Подключение к IMAP серверу
+        sendProgressUpdate(googleUserId, { status: 'Подключаемся к почтовому серверу...' })
+        const client = await connectToImap()
         await client.mailboxOpen('INBOX')
 
-        // Search for emails from the sender on the target date
-        sendProgressUpdate(googleUserId, { status: 'Ищем сообщения...' })
+        // Поиск писем от данного отправителя на указанную дату
+        sendProgressUpdate(googleUserId, { status: 'Поиск сообщений...' })
         const messages = await client.search({ from: sender.email, on: targetDate.toDate() })
+        sendProgressUpdate(googleUserId, { status: `Найдено ${messages.length} сообщений.` })
 
-        // Process each email message and download attachments
-        const fetchedFiles = []
-        const emailList = []
-        sendProgressUpdate(googleUserId, { status: `Нашли ${messages.length} сообщений.` })
-        const totalMessages = messages.length
-        let processedMessages = 0
-
-        const progressInterval = () => Math.floor((processedMessages / totalMessages) * 100)
-
-        const mainFolderName = `${sender.companyName}_${day}`
-        const mainFolderPath = path.join(__dirname, '../downloads', mainFolderName)
-        ensureDownloadDirExists(mainFolderPath)
-        const cities = sender.cities
-        const cellCoordinates = sender.cellCoordinates
-
-        for (let uid of messages) {
-            const message = await client.fetchOne(uid, { envelope: true, bodyStructure: true })
-
-            // Loop through email parts to find and download attachments
-            const downloadAttachments = async (parts, uid) => {
-                if (!parts) return []
-                const downloadedFiles = []
-                let attachmentCount = 0
-                const totalAttachments = parts.filter(part => part.disposition === 'attachment').length
-
-                for (const part of parts) {
-                    const isExcel = part.dispositionParameters?.filename.endsWith('.xlsx') || part.dispositionParameters?.filename.endsWith('.xls')
-                    if (part.disposition === 'attachment' && isExcel) {
-                        const attachmentFilename = part.dispositionParameters.filename
-                        const { content } = await client.download(uid, part.part)
-
-                        const chunks = []
-                        for await (let chunk of content) {
-                            chunks.push(chunk)
-                        }
-                        const buffer = Buffer.concat(chunks)
-                        const fileType = attachmentFilename.endsWith('.xls') ? 'xls' : 'xlsx'
-
-                        // Iterate through cellCoordinates until a city is found
-                        let checkResult = { success: false }
-                        for (let cell of cellCoordinates) {
-                            checkResult = checkCellForCity(buffer, fileType, cell, cities)
-                            if (checkResult.success) break
-                        }
-
-                        // Determine the correct folder based on city detection result
-                        let cityFolderPath = checkResult.success ? path.join(mainFolderPath, checkResult.city) : path.join(mainFolderPath, 'city_undefined')
-
-                        fetchedFiles.push({ filename: attachmentFilename, city: checkResult.success ? checkResult.city : false })
-
-                        if (!fs.existsSync(cityFolderPath)) {
-                            fs.mkdirSync(cityFolderPath, { recursive: true })
-                        }
-
-                        // Save the downloaded attachment to the appropriate folder
-                        const savePath = path.join(cityFolderPath, attachmentFilename)
-                        fs.writeFileSync(savePath, buffer)
-                        downloadedFiles.push(attachmentFilename)
-
-                        // Increment and send progress update
-                        attachmentCount++
-                        const attachmentProgress = Math.floor(((processedMessages + (attachmentCount / totalAttachments)) / totalMessages) * 100)
-                        sendProgressUpdate(googleUserId, {
-                            status: `Загрузили прикрепление ${attachmentFilename} из сообщения ${uid}.`,
-                            progress: attachmentProgress
-                        })
-                    }
-                }
-                return downloadedFiles
-            }
-
-            const attachmentList = await downloadAttachments(message.bodyStructure.childNodes, uid)
-            emailList.push({
-                emailTitle: message.envelope.subject,
-                emailDate: message.envelope.date,
-                emailFrom: message.envelope.from[0].address,
-                emailTo: message.envelope.to.map((recipient) => recipient.address).join(', '),
-                attachments: attachmentList,
-            })
-            processedMessages++
-            sendProgressUpdate(googleUserId, { status: `Загрузили ${attachmentList.length} прикреплений из сообщения ${uid}.`, progress: progressInterval() })
+        // Если писем нет, завершаем выполнение
+        if (messages.length === 0) {
+            await client.logout()
+            return res.json({ success: true, messagesNum: 0, message: 'Нет новых сообщений для обработки.' })
         }
+
+        // Подготовка папки загрузки
+        const mainFolderPath = prepareDownloadFolder(sender.companyName, day)
+        const fetchedFiles = await processEmails(client, messages, sender, mainFolderPath, googleUserId)
+
+        // Проверка и создание папки компании в почтовом ящике
+        await ensureEmailFolderExists(client, sender.companyName)
+
+        // Перемещение писем в папку компании
+        await moveEmailsToFolder(client, messages, sender.companyName)
 
         await client.logout()
 
-        // Create a ZIP archive of downloaded files
-        sendProgressUpdate(googleUserId, { status: 'Процесс завершен.', downloadUrl: `downloads/${mainFolderName}.zip`, progress: progressInterval() })
-
-        // Create a ZIP archive of downloaded files
-        console.log(`Starting archive creation for ${mainFolderPath}...`)  // Log archive start
-        sendProgressUpdate(googleUserId, { status: 'Создаем архив...', progress: progressInterval() })
-
-        const downloadsDir = path.join(__dirname, '../public/downloads')
-        if (!fs.existsSync(downloadsDir)) {
-            fs.mkdirSync(downloadsDir, { recursive: true })
-        }
-
-        const zipPath = path.join(downloadsDir, `${mainFolderName}.zip`)
-        const output = fs.createWriteStream(zipPath)
-        const archive = archiver('zip', { zlib: { level: 9 } })
-
-        output.on('close', () => {
-            console.log(`Archive created successfully: ${archive.pointer()} bytes`) // Log after archive is finalized
-            sendProgressUpdate(googleUserId, { status: 'Архив создан.', progress: 100 })
-
-            if (!saveFolder) {
-                try {
-                    fs.rmSync(mainFolderPath, { recursive: true, force: true })
-                    console.log(`Deleted folder after archive creation: ${mainFolderPath}`)
-                } catch (err) {
-                    console.error('Error deleting folder:', err)
-                }
-            }
-        })
-
-        archive.on('error', (err) => console.error('Error creating archive:', err))
-
-        archive.pipe(output)
-        archive.directory(mainFolderPath, false)
-
-        console.log(`Finalizing archive for ${mainFolderPath}...`) // Log when finalize is called
-        await archive.finalize()
-
-
-        // Clean up downloaded files if saveFolder is not set
-        if (!saveFolder) {
-            fs.rmSync(mainFolderPath, { recursive: true, force: true })
-            console.log(`Deleted folder: ${mainFolderPath}`)
-        }
+        // Создание ZIP-архива с загруженными файлами
+        const zipPath = await createZipArchive(mainFolderPath, sender.companyName, day)
+        if (!saveFolder) fs.rmSync(mainFolderPath, { recursive: true, force: true })
 
         return res.json({
             success: true,
             messagesNum: messages.length,
             fetchedFiles,
-            mainFolderName,
-            downloadUrl: `downloads/${mainFolderName}.zip`,
-            message: `Fetched and downloaded attachments for sender ${sender.email} on ${day}.`,
+            mainFolderName: path.basename(mainFolderPath),
+            downloadUrl: zipPath,
+            message: `Вложения для отправителя ${sender.email} на ${day} загружены, скачаны и перемещены в папку ${sender.companyName}.`,
         })
+
     } catch (err) {
-        console.error('Error fetching orders:', err)
-        let message = 'Error fetching orders.'
-        if (err?.code === 'ECONNREFUSED') {
-            message = 'mail.ru not responding. Please, try later.'
-        }
-        res.status(500).json({ success: false, message, err: err, hey: 'hey' })
+        console.error('Ошибка при получении заказов:', err)
+        res.status(500).json({ success: false, message: 'Ошибка при получении заказов.', error: err })
     }
 }
 
-const ensureDownloadDirExists = (mainFolderPath) => {
-    const downloadDir = path.join(__dirname, '..', 'downloads')
-    if (!fs.existsSync(downloadDir)) {
-        fs.mkdirSync(downloadDir)
-    }
+// Обрабатывает список сообщений и загружает вложения
+const processEmails = async (client, messages, sender, mainFolderPath, googleUserId) => {
+    let fetchedFiles = []
+    let processedMessages = 0
 
-    // Clear only the specific folder (mainFolderName)
-    if (fs.existsSync(mainFolderPath)) {
-        const files = fs.readdirSync(mainFolderPath)
-        for (const file of files) {
-            const filePath = path.join(mainFolderPath, file)
-            if (fs.statSync(filePath).isDirectory()) {
-                fs.rmSync(filePath, { recursive: true, force: true })
-            } else {
-                fs.unlinkSync(filePath)
-            }
-        }
-    } else {
-        // If the folder doesn't exist, create it
-        fs.mkdirSync(mainFolderPath, { recursive: true })
+    for (let uid of messages) {
+        // Получаем информацию о письме
+        const message = await client.fetchOne(uid, { envelope: true, bodyStructure: true })
+        const attachmentList = await downloadAttachments(client, message.bodyStructure.childNodes, uid, sender, mainFolderPath)
+
+        fetchedFiles.push(...attachmentList)
+        processedMessages++
+
+        // Обновление статуса загрузки
+        sendProgressUpdate(googleUserId, {
+            status: `Обработано ${processedMessages}/${messages.length} сообщений.`,
+            progress: Math.floor((processedMessages / messages.length) * 100),
+        })
     }
+    return fetchedFiles
 }
 
+// Загружает вложения из сообщений
+const downloadAttachments = async (client, parts, uid, sender, mainFolderPath) => {
+    if (!parts) return []
+    let downloadedFiles = []
+
+    for (const part of parts) {
+        // Проверяем, является ли часть письма вложением Excel
+        if (part.disposition === 'attachment' && part.dispositionParameters.filename.match(/\.(xlsx|xls)$/)) {
+            const attachmentFilename = part.dispositionParameters.filename
+            const { content } = await client.download(uid, part.part)
+            const bufferChunks = await streamToBuffer(content)
+            const buffer = Buffer.concat(bufferChunks)
+
+            // Определяем правильную папку для вложения
+            let cityFolderPath = determineCityFolder(buffer, attachmentFilename, sender, mainFolderPath)
+            fs.writeFileSync(path.join(cityFolderPath, attachmentFilename), buffer)
+
+            downloadedFiles.push({ filename: attachmentFilename, city: cityFolderPath.split('/').pop() })
+        }
+    }
+    return downloadedFiles
+}
+
+// Получает список отправителей из базы данных
 exports.getSenders = async (req, res) => {
     try {
         const senders = await Sender.findAll()
-        return res.json(senders)
+        res.json(senders)
     } catch (error) {
-        console.error('Error fetching senders:', error)
-        res.status(500).json({ error: 'Failed to fetch senders' })
+        console.error('Ошибка при получении отправителей:', error)
+        res.status(500).json({ error: 'Не удалось получить отправителей' })
     }
 }
