@@ -8,6 +8,7 @@ const db = require('./config/db') // MySQL connection
 const path = require('path')
 const { authCheck } = require('./middlewares/driveAuth')
 const { monitorFetchProgress } = require('./middlewares/progressTracker')
+const requestLogger = require('./middlewares/requestLogger')
 
 dotenv.config()
 
@@ -24,6 +25,9 @@ app.use((req, res, next) => {
 
     next()
 })
+
+// Apply the request logger middleware globally
+app.use(requestLogger)
 
 // Serve static files from the 'public/downloads' directory
 app.use('/downloads', express.static(path.join(__dirname, 'public', 'downloads')))

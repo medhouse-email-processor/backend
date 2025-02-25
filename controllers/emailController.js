@@ -33,8 +33,10 @@ exports.fetchAndDownloadOrders = async (req, res) => {
         sendProgressUpdate(googleUserId, { status: 'Подключаемся к серверу почтового ящика...' })
 
         const client = new ImapFlow({
-            host: 'imap.mail.ru',
+            // host: 'imap.mail.ru',
+            host: 'pkz41.hoster.kz',
             port: 993,
+            // port: 143,
             secure: true,
             tls: {
                 rejectUnauthorized: false, // Try allowing self-signed certificates
@@ -142,6 +144,10 @@ exports.fetchAndDownloadOrders = async (req, res) => {
         // Create a ZIP archive of downloaded files
         sendProgressUpdate(googleUserId, { status: 'Процесс завершен.', downloadUrl: `downloads/${mainFolderName}.zip`, progress: progressInterval() })
 
+        // Create a ZIP archive of downloaded files
+        console.log(`Starting archive creation for ${mainFolderPath}...`)  // Log archive start
+        sendProgressUpdate(googleUserId, { status: 'Создаем архив...', progress: progressInterval() })
+
         const downloadsDir = path.join(__dirname, '../public/downloads')
         if (!fs.existsSync(downloadsDir)) {
             fs.mkdirSync(downloadsDir, { recursive: true })
@@ -151,12 +157,28 @@ exports.fetchAndDownloadOrders = async (req, res) => {
         const output = fs.createWriteStream(zipPath)
         const archive = archiver('zip', { zlib: { level: 9 } })
 
-        output.on('close', () => console.log(`Archive created: ${archive.pointer()} bytes`))
+        output.on('close', () => {
+            console.log(`Archive created successfully: ${archive.pointer()} bytes`) // Log after archive is finalized
+            sendProgressUpdate(googleUserId, { status: 'Архив создан.', progress: 100 })
+
+            if (!saveFolder) {
+                try {
+                    fs.rmSync(mainFolderPath, { recursive: true, force: true })
+                    console.log(`Deleted folder after archive creation: ${mainFolderPath}`)
+                } catch (err) {
+                    console.error('Error deleting folder:', err)
+                }
+            }
+        })
+
         archive.on('error', (err) => console.error('Error creating archive:', err))
 
         archive.pipe(output)
         archive.directory(mainFolderPath, false)
+
+        console.log(`Finalizing archive for ${mainFolderPath}...`) // Log when finalize is called
         await archive.finalize()
+
 
         // Clean up downloaded files if saveFolder is not set
         if (!saveFolder) {
@@ -178,7 +200,7 @@ exports.fetchAndDownloadOrders = async (req, res) => {
         if (err?.code === 'ECONNREFUSED') {
             message = 'mail.ru not responding. Please, try later.'
         }
-        res.status(500).json({ success: false, message })
+        res.status(500).json({ success: false, message, err: err, hey: 'hey' })
     }
 }
 
