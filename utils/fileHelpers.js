@@ -36,13 +36,24 @@ exports.createZipArchive = async (mainFolderPath, companyName, day) => {
 }
 
 exports.streamToBuffer = async (stream) => {
-    console.log('Преобразование потока в буфер...')
+    // console.log('Преобразование потока в буфер...')
     let chunks = []
 
     for await (let chunk of stream) {
         chunks.push(chunk)
     }
 
-    console.log('Буфер успешно создан.')
+    // console.log('Буфер успешно создан.')
     return chunks // Return an array of buffers (correct fix)
+}
+
+exports.ensureDownloadDirExists = (mainFolderPath) => {
+    const downloadDir = path.join(__dirname, '..', 'downloads')
+    if (!fs.existsSync(downloadDir)) {
+        fs.mkdirSync(downloadDir, { recursive: true })
+    }
+
+    if (!fs.existsSync(mainFolderPath)) {
+        fs.mkdirSync(mainFolderPath, { recursive: true })
+    }
 }

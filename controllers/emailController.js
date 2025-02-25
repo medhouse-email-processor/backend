@@ -4,8 +4,11 @@ const Sender = require('../models/senderModel')
 const moment = require('moment')
 const pino = require('pino')()
 const { sendProgressUpdate } = require('../middlewares/progressTracker')
-const { connectToImap, determineCityFolder, ensureEmailFolderExists, moveEmailsToFolder } = require('../utils/emailHelpers')
-const { prepareDownloadFolder, createZipArchive, streamToBuffer } = require('../utils/fileHelpers')
+const { connectToImap, determineCityFolder,
+    ensureEmailFolderExists, moveEmailsToFolder,
+    searchEmails } = require('../utils/emailHelpers')
+const { prepareDownloadFolder, createZipArchive,
+    streamToBuffer, ensureDownloadDirExists } = require('../utils/fileHelpers')
 require('dotenv').config()
 
 pino.level = 'silent'
@@ -16,7 +19,6 @@ exports.fetchAndDownloadOrders = async (req, res) => {
     const { senderId, day, saveFolder } = req.body
     const targetDate = moment.utc(day, 'YYYY-MM-DD')
 
-    // Проверка формата даты
     if (!targetDate.isValid()) {
         return res.status(400).json({ success: false, message: 'Неверный формат даты, используйте YYYY-MM-DD.' })
     }
@@ -28,35 +30,37 @@ exports.fetchAndDownloadOrders = async (req, res) => {
         const sender = await Sender.findByPk(senderId)
         if (!sender) return res.status(404).json({ success: false, message: 'Отправитель не найден.' })
 
-        // Подключение к IMAP серверу
         sendProgressUpdate(googleUserId, { status: 'Подключаемся к почтовому серверу...' })
         const client = await connectToImap()
         await client.mailboxOpen('INBOX')
 
-        // Поиск писем от данного отправителя на указанную дату
         sendProgressUpdate(googleUserId, { status: 'Поиск сообщений...' })
-        const messages = await client.search({ from: sender.email, on: targetDate.toDate() })
+
+        const isDomainSearch = sender.email.startsWith('@')
+        const emailQuery = isDomainSearch ? `@${sender.email.split('@')[1]}` : sender.email
+        const messages = await searchEmails(client, emailQuery, targetDate.toDate()) || []
+
         sendProgressUpdate(googleUserId, { status: `Найдено ${messages.length} сообщений.` })
 
-        // Если писем нет, завершаем выполнение
         if (messages.length === 0) {
             await client.logout()
-            return res.json({ success: true, messagesNum: 0, message: 'Нет новых сообщений для обработки.' })
+            return res.json({
+                success: false,
+                messagesNum: 0,
+                message: 'Не найдено сообщений по заданному отправителю и дате.'
+            })
         }
 
-        // Подготовка папки загрузки
         const mainFolderPath = prepareDownloadFolder(sender.companyName, day)
+        ensureDownloadDirExists(mainFolderPath) // ✅ Restore missing function
+
         const fetchedFiles = await processEmails(client, messages, sender, mainFolderPath, googleUserId)
 
-        // Проверка и создание папки компании в почтовом ящике
         await ensureEmailFolderExists(client, sender.companyName)
-
-        // Перемещение писем в папку компании
-        await moveEmailsToFolder(client, messages, sender.companyName)
+        await moveEmailsToFolder(client, messages, sender.companyName) // ✅ Restored email moving
 
         await client.logout()
 
-        // Создание ZIP-архива с загруженными файлами
         const zipPath = await createZipArchive(mainFolderPath, sender.companyName, day)
         if (!saveFolder) fs.rmSync(mainFolderPath, { recursive: true, force: true })
 
@@ -75,20 +79,35 @@ exports.fetchAndDownloadOrders = async (req, res) => {
     }
 }
 
-// Обрабатывает список сообщений и загружает вложения
 const processEmails = async (client, messages, sender, mainFolderPath, googleUserId) => {
     let fetchedFiles = []
     let processedMessages = 0
+    let emailList = [] // ✅ Restore missing email metadata
 
     for (let uid of messages) {
-        // Получаем информацию о письме
         const message = await client.fetchOne(uid, { envelope: true, bodyStructure: true })
-        const attachmentList = await downloadAttachments(client, message.bodyStructure.childNodes, uid, sender, mainFolderPath)
+
+        // console.log(`📩 Обрабатываем сообщение: ${message.envelope.subject} от ${message.envelope.from[0].address}`)
+
+        const attachmentList = await downloadAttachments(
+            client,
+            message.bodyStructure.childNodes,
+            uid,
+            sender,
+            mainFolderPath
+        )
 
         fetchedFiles.push(...attachmentList)
         processedMessages++
 
-        // Обновление статуса загрузки
+        // ✅ Store email metadata (restored)
+        emailList.push({
+            emailTitle: message.envelope.subject,
+            emailDate: message.envelope.date,
+            emailFrom: message.envelope.from[0].address,
+            attachments: attachmentList,
+        })
+
         sendProgressUpdate(googleUserId, {
             status: `Обработано ${processedMessages}/${messages.length} сообщений.`,
             progress: Math.floor((processedMessages / messages.length) * 100),
@@ -103,18 +122,23 @@ const downloadAttachments = async (client, parts, uid, sender, mainFolderPath) =
     let downloadedFiles = []
 
     for (const part of parts) {
-        // Проверяем, является ли часть письма вложением Excel
         if (part.disposition === 'attachment' && part.dispositionParameters.filename.match(/\.(xlsx|xls)$/)) {
             const attachmentFilename = part.dispositionParameters.filename
             const { content } = await client.download(uid, part.part)
             const bufferChunks = await streamToBuffer(content)
             const buffer = Buffer.concat(bufferChunks)
 
-            // Определяем правильную папку для вложения
-            let cityFolderPath = determineCityFolder(buffer, attachmentFilename, sender, mainFolderPath)
-            fs.writeFileSync(path.join(cityFolderPath, attachmentFilename), buffer)
+            // Ensure sender.cities is an array before using .includes
+            let detectedCity = determineCityFolder(buffer, attachmentFilename, sender, mainFolderPath)
+            let mainCity = sender.cities[detectedCity] || 'city_undefined' // Get main city directly
 
-            downloadedFiles.push({ filename: attachmentFilename, city: cityFolderPath.split('/').pop() })
+            let cityFolderPath = path.join(mainFolderPath, mainCity)
+            if (!fs.existsSync(cityFolderPath)) {
+                fs.mkdirSync(cityFolderPath, { recursive: true })
+            }
+
+            fs.writeFileSync(path.join(cityFolderPath, attachmentFilename), buffer)
+            downloadedFiles.push({ filename: attachmentFilename, city: mainCity })
         }
     }
     return downloadedFiles
