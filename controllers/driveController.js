@@ -5,6 +5,16 @@ const { oAuth2Client } = require('../middlewares/driveAuth')
 require('dotenv').config() // Load environment variables from .env
 const { sendProgressUpdate } = require('../middlewares/progressTracker')
 
+// Function to check if a file already exists in a Drive folder
+const fileExistsInDrive = async (drive, fileName, parentId) => {
+    const fileQuery = `'${parentId}' in parents and name = '${fileName}' and mimeType != 'application/vnd.google-apps.folder'`
+    const fileResponse = await drive.files.list({
+        q: fileQuery,
+        fields: 'files(id, name)',
+    })
+    return fileResponse.data.files.length > 0
+}
+
 // Function to clear files inside a specified Google Drive folder
 const clearDriveFolder = async (drive, folderId) => {
     try {
@@ -69,8 +79,21 @@ exports.uploadToDrive = async (googleUserId, mainFolderName, folderId = null) =>
                 parentFolderId = await ensureDriveFolder(drive, folderName, parentFolderId)
             }
 
+            const fileName = path.basename(filePath)
+
+            if (await fileExistsInDrive(drive, fileName, parentFolderId)) {
+                // console.log(`File ${fileName} already exists in Google Drive. Skipping upload.`)
+                uploadedFiles++
+                const progress = Math.floor((uploadedFiles / totalFiles) * 100)
+                sendProgressUpdate(googleUserId, {
+                    status: `Файл ${fileName} уже существует. Пропускаем его.`,
+                    progress: progress,
+                })
+                continue
+            }
+
             const fileMetadata = {
-                name: path.basename(filePath),
+                name: fileName,
                 parents: parentFolderId ? [parentFolderId] : [],
             }
 
@@ -93,7 +116,7 @@ exports.uploadToDrive = async (googleUserId, mainFolderName, folderId = null) =>
             uploadedFiles++
             const progress = Math.floor((uploadedFiles / totalFiles) * 100)
             sendProgressUpdate(googleUserId, {
-                status: `Выгрузили ${path.basename(filePath)} в Google Drive.`,
+                status: `Выгрузили ${fileName} в Google Drive.`,
                 progress: progress,
             })
         }
