@@ -56,23 +56,22 @@ exports.uploadToDrive = async (googleUserId, mainFolderName, folderId = null) =>
             throw new Error(`The folder "${mainFolderName}" does not exist in the "downloads" directory.`)
         }
 
+        const rootFolderId = folderId
         const fileList = getAllFilesWithStructure(mainFolderPath)
         const totalFiles = fileList.length
         let uploadedFiles = 0
 
         for (const { filePath, relativePath } of fileList) {
-            let folderIdForFile = folderId
+            const folderHierarchy = relativePath.split(path.sep)
+            let parentFolderId = rootFolderId
 
-            if (relativePath.includes(path.sep)) {
-                const subFolderStructure = relativePath.split(path.sep).slice(0, -1)
-                for (const folderName of subFolderStructure) {
-                    folderIdForFile = await ensureDriveFolder(drive, folderName, folderIdForFile)
-                }
+            for (const folderName of folderHierarchy.slice(0, -1)) {
+                parentFolderId = await ensureDriveFolder(drive, folderName, parentFolderId)
             }
 
             const fileMetadata = {
                 name: path.basename(filePath),
-                parents: folderIdForFile ? [folderIdForFile] : [],
+                parents: parentFolderId ? [parentFolderId] : [],
             }
 
             const media = {

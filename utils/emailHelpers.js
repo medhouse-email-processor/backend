@@ -29,7 +29,7 @@ exports.connectToImap = async () => {
 // Function to sanitize folder names (removes bad characters)
 const cleanFolderName = (name) => {
     if (!name || typeof name !== 'string') return 'city_undefined'
-    
+
     return name
         .replace(/[^a-zA-Zа-яА-Я0-9\s_-]/g, '')  // Remove special characters (like `"` and `\n`)
         .trim()  // Remove leading/trailing spaces
@@ -56,7 +56,7 @@ exports.determineCityAndSupplier = (buffer, filename, sender) => {
         for (let cell of coordinates) {
             supplierResult = checkCellForSupplier(buffer, fileType, cell, names)
             if (supplierResult.success) {
-                supplierResult.supplier = 'Тест-медикал' // Set the supplier name
+                supplierResult.supplier = 'Тест-Медикал' // Set the supplier name
                 break
             }
         }
