@@ -150,10 +150,22 @@ const checkCellForCity = (fileContent, fileType, cell, cities) => {
             return { success: false, message: 'Список городов пуст' }
         }
 
-        const foundSubCity = subCities.find(subCity => cellValue.includes(subCity))
-        const foundMainCity = cities[foundSubCity]
-        console.log(foundSubCity, foundMainCity)
-        return foundMainCity ? { success: true, city: foundMainCity } : { success: false, message: 'Город не найден' }
+        let remainingText = cellValue
+        let foundSubCities = []
+        while (true) {
+            const foundSubCity = subCities.find(subCity => remainingText.includes(subCity))
+            if (!foundSubCity) break
+
+            foundSubCities.push(foundSubCity)
+
+            // Remove text up to and including the last character of foundSubCity
+            remainingText = remainingText.substring(remainingText.indexOf(foundSubCity) + foundSubCity.length).trim();
+        }
+
+        const lastFoundSubCity = foundSubCities.length > 0 ? foundSubCities[foundSubCities.length - 1] : null;
+        const foundMainCity = lastFoundSubCity ? cities[lastFoundSubCity] : null;
+
+        return foundMainCity ? { success: true, city: foundMainCity } : { success: false, message: 'Город не найден' };
     } catch (err) {
         console.error(`Ошибка при чтении ячейки ${cell}:`, err)
         return { success: false, message: 'Ошибка при чтении ячейки' }
