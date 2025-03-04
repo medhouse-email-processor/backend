@@ -41,12 +41,10 @@ exports.determineCityAndSupplier = (buffer, filename, sender) => {
     let cityResult = { success: false }
     let supplierResult = { success: false }
 
-    // Ensure sender.cities is an array before use
-    let cityList = Array.isArray(sender.cities) ? sender.cities : Object.values(sender.cities)
-
+    console.log(filename)
     // Check for city
     for (let cell of sender.cellCoordinates) {
-        cityResult = checkCellForCity(buffer, fileType, cell, cityList)
+        cityResult = checkCellForCity(buffer, fileType, cell, sender.cities)
         if (cityResult.success) break // Stop if we find a valid city
     }
 
@@ -145,14 +143,17 @@ const checkCellForCity = (fileContent, fileType, cell, cities) => {
         if (!cellValue) return { success: false, message: 'Ячейка не найдена или пуста' }
 
         // 🔥 FIX: Convert cities object to an array properly
-        const cityList = Array.isArray(cities) ? cities : Object.values(cities)
-        if (!cityList.length) {
-            console.error("❌ Ошибка: Нет доступных городов в cityList.")
+        const subCities = Object.keys(cities)
+        // const cityList = Array.isArray(cities) ? cities : Object.values(cities)
+        if (!subCities.length) {
+            console.error("❌ Ошибка: Нет доступных городов.")
             return { success: false, message: 'Список городов пуст' }
         }
 
-        const foundCity = cityList.find(city => cellValue.includes(city))
-        return foundCity ? { success: true, city: foundCity } : { success: false, message: 'Город не найден' }
+        const foundSubCity = subCities.find(subCity => cellValue.includes(subCity))
+        const foundMainCity = cities[foundSubCity]
+        console.log(foundSubCity, foundMainCity)
+        return foundMainCity ? { success: true, city: foundMainCity } : { success: false, message: 'Город не найден' }
     } catch (err) {
         console.error(`Ошибка при чтении ячейки ${cell}:`, err)
         return { success: false, message: 'Ошибка при чтении ячейки' }
