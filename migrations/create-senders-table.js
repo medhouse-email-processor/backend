@@ -24,6 +24,14 @@ module.exports = {
                 type: Sequelize.STRING, // e.g., "B2"
                 allowNull: false
             },
+            daichinCoordinates: {
+                type: Sequelize.TEXT,
+                allowNull: true,
+            },
+            testmedCoordinates: {
+                type: Sequelize.TEXT,
+                allowNull: true,
+            },
             createdAt: {
                 allowNull: false,
                 type: Sequelize.DATE

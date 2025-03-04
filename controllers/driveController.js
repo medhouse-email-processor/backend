@@ -15,7 +15,7 @@ const clearDriveFolder = async (drive, folderId) => {
 
         for (const file of files.data.files) {
             await drive.files.delete({ fileId: file.id })
-            console.log(`Deleted file ${file.name} from folder ${folderId}`)
+            // console.log(`Deleted file ${file.name} from folder ${folderId}`)
         }
     } catch (error) {
         console.error('Error clearing folder:', error)
@@ -56,13 +56,12 @@ exports.uploadToDrive = async (googleUserId, mainFolderName, folderId = null) =>
             throw new Error(`The folder "${mainFolderName}" does not exist in the "downloads" directory.`)
         }
 
-        const mainFolderId = await ensureDriveFolder(drive, mainFolderName, folderId)
         const fileList = getAllFilesWithStructure(mainFolderPath)
         const totalFiles = fileList.length
         let uploadedFiles = 0
 
         for (const { filePath, relativePath } of fileList) {
-            let folderIdForFile = mainFolderId
+            let folderIdForFile = folderId
 
             if (relativePath.includes(path.sep)) {
                 const subFolderStructure = relativePath.split(path.sep).slice(0, -1)
@@ -87,10 +86,10 @@ exports.uploadToDrive = async (googleUserId, mainFolderName, folderId = null) =>
                 fields: 'id',
             })
 
-            console.log(`File ${filePath} uploaded successfully. File ID: ${response.data.id}`)
+            // console.log(`File ${filePath} uploaded successfully. File ID: ${response.data.id}`)
 
             fs.unlinkSync(filePath)
-            console.log(`File ${filePath} deleted after upload.`)
+            // console.log(`File ${filePath} deleted after upload.`)
 
             uploadedFiles++
             const progress = Math.floor((uploadedFiles / totalFiles) * 100)
@@ -101,7 +100,7 @@ exports.uploadToDrive = async (googleUserId, mainFolderName, folderId = null) =>
         }
 
         fs.rmSync(mainFolderPath, { recursive: true })
-        console.log(`Folder ${mainFolderPath} deleted successfully.`)
+        // console.log(`Folder ${mainFolderPath} deleted successfully.`)
         sendProgressUpdate(googleUserId, { status: 'Выгрузка в Google Drive завершена.', progress: 100 })
 
     } catch (error) {
@@ -133,7 +132,7 @@ const ensureDriveFolder = async (drive, folderName, parentId) => {
             fields: 'id',
         })
 
-        console.log(`Created folder ${folderName} with ID ${folder.data.id}`)
+        // console.log(`Created folder ${folderName} with ID ${folder.data.id}`)
         return folder.data.id
     }
 }

@@ -2,9 +2,10 @@ const Sender = require('../models/senderModel')
 
 // Create a sender function
 exports.createSender = async (req, res) => {
-    const { companyName, email, cities, cellCoordinates } = req.body
+    const { companyName, email, cities,
+        cellCoordinates, daichinCoordinates, testmedCoordinates } = req.body
 
-    if (!companyName || !email || !cellCoordinates) {
+    if (!companyName || !email || !cellCoordinates || !daichinCoordinates || !testmedCoordinates) {
         return res.status(400).json({ message: 'Please provide all required fields' })
     }
 
@@ -14,7 +15,9 @@ exports.createSender = async (req, res) => {
             companyName,
             email,
             cities, // Assuming this comes as an array in the request
-            cellCoordinates
+            cellCoordinates,
+            daichinCoordinates,
+            testmedCoordinates
         })
 
         return res.status(201).json({ message: 'Sender created successfully', sender: newSender })

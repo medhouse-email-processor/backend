@@ -2,10 +2,10 @@ const fs = require('fs')
 const path = require('path')
 
 const requestLogger = (req, res, next) => {
-    console.log('Вход в middleware')
+    // console.log('Вход в middleware')
 
     if (req.query.logs !== 'true') {
-        console.log('Пропускаем логирование, так как logs=true не установлено')
+        // console.log('Пропускаем логирование, так как logs=true не установлено')
         return next()
     }
 

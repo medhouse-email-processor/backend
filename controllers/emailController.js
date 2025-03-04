@@ -4,7 +4,7 @@ const Sender = require('../models/senderModel')
 const moment = require('moment')
 const pino = require('pino')()
 const { sendProgressUpdate } = require('../middlewares/progressTracker')
-const { connectToImap, determineCityFolder,
+const { connectToImap, determineCityAndSupplier,
     ensureEmailFolderExists, moveEmailsToFolder,
     searchEmails } = require('../utils/emailHelpers')
 const { prepareDownloadFolder, createZipArchive,
@@ -15,7 +15,7 @@ pino.level = 'silent'
 
 // Функция для получения и загрузки заказов из электронной почты
 exports.fetchAndDownloadOrders = async (req, res) => {
-    console.log('Обнаружен запрос на получение электронной почты...')
+    // console.log('Обнаружен запрос на получение электронной почты...')
     const { senderId, day, saveFolder } = req.body
     const targetDate = moment.utc(day, 'YYYY-MM-DD')
 
@@ -128,17 +128,26 @@ const downloadAttachments = async (client, parts, uid, sender, mainFolderPath) =
             const bufferChunks = await streamToBuffer(content)
             const buffer = Buffer.concat(bufferChunks)
 
-            // Ensure sender.cities is an array before using .includes
-            let detectedCity = determineCityFolder(buffer, attachmentFilename, sender, mainFolderPath)
-            let mainCity = sender.cities[detectedCity] || 'city_undefined' // Get main city directly
+            // Determine the city and supplier
+            const { city, supplier } = determineCityAndSupplier(buffer, attachmentFilename, sender)
 
-            let cityFolderPath = path.join(mainFolderPath, mainCity)
+            // Create the folder structure: supplier/sender.companyName/city
+            const supplierFolderPath = path.join(mainFolderPath, supplier)
+            const companyFolderPath = path.join(supplierFolderPath, sender.companyName)
+            const cityFolderPath = path.join(companyFolderPath, city)
+
             if (!fs.existsSync(cityFolderPath)) {
                 fs.mkdirSync(cityFolderPath, { recursive: true })
             }
 
+            // Save the file
             fs.writeFileSync(path.join(cityFolderPath, attachmentFilename), buffer)
-            downloadedFiles.push({ filename: attachmentFilename, city: mainCity })
+            downloadedFiles.push({
+                filename: attachmentFilename,
+                supplier,
+                company: sender.companyName,
+                city,
+            })
         }
     }
     return downloadedFiles
