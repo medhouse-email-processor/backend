@@ -37,14 +37,18 @@ const cleanFolderName = (name) => {
 
 // Function to determine both city and supplier from the file buffer
 exports.determineCityAndSupplier = (buffer, filename, sender) => {
-    let fileType = filename.endsWith('.xls') ? 'xls' : 'xlsx'
+    const fileType = filename.endsWith('.xls') ? 'xls' : 'xlsx'
     let cityResult = { success: false }
     let supplierResult = { success: false }
 
     console.log(filename)
+
+    // Sort city names by descending length
+    const sortedCityKeys = Object.keys(sender.cities).sort((a, b) => b.length - a.length)
+    console.log(sortedCityKeys)
     // Check for city
     for (let cell of sender.cellCoordinates) {
-        cityResult = checkCellForCity(buffer, fileType, cell, sender.cities)
+        cityResult = checkCellForCity(buffer, fileType, cell, sender.cities, sortedCityKeys)
         if (cityResult.success) break // Stop if we find a valid city
     }
 
@@ -127,7 +131,7 @@ exports.searchEmails = async (client, emailQuery, targetDate) => {
     }
 }
 
-const checkCellForCity = (fileContent, fileType, cell, cities) => {
+const checkCellForCity = (fileContent, fileType, cell, cities, sortedCityKeys) => {
     try {
         let worksheet
         if (fileType === 'xls') {
@@ -142,10 +146,8 @@ const checkCellForCity = (fileContent, fileType, cell, cities) => {
         const cellValue = worksheet[cell] ? worksheet[cell].v : null
         if (!cellValue) return { success: false, message: 'Ячейка не найдена или пуста' }
 
-        // 🔥 FIX: Convert cities object to an array properly
-        const subCities = Object.keys(cities)
-        // const cityList = Array.isArray(cities) ? cities : Object.values(cities)
-        if (!subCities.length) {
+        // Use sortedCityKeys instead of recreating subCities
+        if (!sortedCityKeys.length) {
             console.error("❌ Ошибка: Нет доступных городов.")
             return { success: false, message: 'Список городов пуст' }
         }
@@ -153,7 +155,7 @@ const checkCellForCity = (fileContent, fileType, cell, cities) => {
         let remainingText = cellValue
         let foundSubCities = []
         while (true) {
-            const foundSubCity = subCities.find(subCity => remainingText.includes(subCity))
+            const foundSubCity = sortedCityKeys.find(subCity => remainingText.includes(subCity))
             if (!foundSubCity) break
 
             foundSubCities.push(foundSubCity)

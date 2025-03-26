@@ -131,21 +131,19 @@ const downloadAttachments = async (client, parts, uid, sender, mainFolderPath) =
             // Determine the city and supplier
             const { city, supplier } = determineCityAndSupplier(buffer, attachmentFilename, sender)
 
-            // Create the folder structure: supplier/sender.companyName/city
+            // Create the folder structure: sender_date/supplier/city
             const supplierFolderPath = path.join(mainFolderPath, supplier)
-            const companyFolderPath = path.join(supplierFolderPath, sender.companyName)
-            const cityFolderPath = path.join(companyFolderPath, city)
+            const cityFolderPath = path.join(supplierFolderPath, city)  // Changed this line
 
             if (!fs.existsSync(cityFolderPath)) {
                 fs.mkdirSync(cityFolderPath, { recursive: true })
             }
 
-            // Save the file
             fs.writeFileSync(path.join(cityFolderPath, attachmentFilename), buffer)
             downloadedFiles.push({
                 filename: attachmentFilename,
                 supplier,
-                company: sender.companyName,
+                company: sender.companyName,  // Keep this for the metadata
                 city,
             })
         }
