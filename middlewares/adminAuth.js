@@ -8,7 +8,7 @@ const authenticateAdmin = async (req, res, next) => {
     const { password } = req.body
 
     if (!password) {
-        return res.status(401).json({ message: 'Password is required' })
+        return res.status(401).json({ message: 'Требуется пароль' })
     }
 
     try {
@@ -19,14 +19,14 @@ const authenticateAdmin = async (req, res, next) => {
         const isValid = password === adminTokenHash
 
         if (!isValid) {
-            return res.status(403).json({ message: 'Invalid admin password' })
+            return res.status(403).json({ message: 'Неверный пароль администратора' })
         }
 
         // If password is correct, proceed to the next middleware or controller
         next()
     } catch (error) {
         console.error('Error during admin authentication:', error)
-        return res.status(500).json({ message: 'Server error during authentication' })
+        return res.status(500).json({ message: 'Серверная ошибка во время аутентификации' })
     }
 }
 

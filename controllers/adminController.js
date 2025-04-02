@@ -56,16 +56,26 @@ exports.updateSender = async (req, res) => {
         }
 
         if (email !== undefined) {
-            if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-                return res.status(400).json({ message: 'Invalid email format' })
+            if (typeof email !== 'string' || email.trim() === '') {
+                return res.status(400).json({ message: 'Email must be a non-empty string' })
             }
-            // Check if email is already in use by another sender
+
+            // Regular expressions for validation
+            const fullEmailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/ // e.g., user@example.com
+            const domainRegex = /^@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/ // e.g., @example.com
+
+            if (!fullEmailRegex.test(email) && !domainRegex.test(email)) {
+                return res.status(400).json({ message: 'Invalid email format. Use user@example.com or @example.com' })
+            }
+
+            // Check if email/domain is already in use by another sender
             const emailExists = await Sender.findOne({
                 where: { email, id: { [Op.ne]: id } }
             })
             if (emailExists) {
-                return res.status(400).json({ message: 'Email is already in use' })
+                return res.status(400).json({ message: 'Email or domain is already in use' })
             }
+
             updates.email = email.trim()
         }
 
