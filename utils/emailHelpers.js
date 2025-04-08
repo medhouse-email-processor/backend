@@ -45,7 +45,7 @@ exports.determineCityAndSupplier = (buffer, filename, sender) => {
 
     // Sort city names by descending length
     const sortedCityKeys = Object.keys(sender.cities).sort((a, b) => b.length - a.length)
-    console.log(sortedCityKeys)
+    // console.log(sortedCityKeys)
     // Check for city
     for (let cell of sender.cellCoordinates) {
         cityResult = checkCellForCity(buffer, fileType, cell, sender.cities, sortedCityKeys)
@@ -146,28 +146,34 @@ const checkCellForCity = (fileContent, fileType, cell, cities, sortedCityKeys) =
         const cellValue = worksheet[cell] ? worksheet[cell].v : null
         if (!cellValue) return { success: false, message: 'Ячейка не найдена или пуста' }
 
-        // Use sortedCityKeys instead of recreating subCities
         if (!sortedCityKeys.length) {
             console.error("❌ Ошибка: Нет доступных городов.")
             return { success: false, message: 'Список городов пуст' }
         }
 
-        let remainingText = cellValue
-        let foundSubCities = []
-        while (true) {
-            const foundSubCity = sortedCityKeys.find(subCity => remainingText.includes(subCity))
-            if (!foundSubCity) break
+        // Convert cellValue to lowercase for case-insensitive comparison
+        const cellValueLower = cellValue.toLowerCase()
 
-            foundSubCities.push(foundSubCity)
+        // Find all matching cities (case-insensitive)
+        const foundCities = sortedCityKeys
+            .filter(subCity => cellValueLower.includes(subCity.toLowerCase()))
+            .map(subCity => ({ name: subCity, length: subCity.length }))
 
-            // Remove text up to and including the last character of foundSubCity
-            remainingText = remainingText.substring(remainingText.indexOf(foundSubCity) + foundSubCity.length).trim();
+        if (!foundCities.length) {
+            return { success: false, message: 'Город не найден' }
         }
 
-        const lastFoundSubCity = foundSubCities.length > 0 ? foundSubCities[foundSubCities.length - 1] : null;
-        const foundMainCity = lastFoundSubCity ? cities[lastFoundSubCity] : null;
+        // Find the maximum length among found cities
+        const maxLength = Math.max(...foundCities.map(city => city.length))
 
-        return foundMainCity ? { success: true, city: foundMainCity } : { success: false, message: 'Город не найден' };
+        // Get all cities with the maximum length
+        const longestCities = foundCities.filter(city => city.length === maxLength)
+
+        // Pick the last city among the longest ones
+        const selectedCity = longestCities[longestCities.length - 1].name
+        const foundMainCity = cities[selectedCity]
+
+        return { success: true, city: foundMainCity }
     } catch (err) {
         console.error(`Ошибка при чтении ячейки ${cell}:`, err)
         return { success: false, message: 'Ошибка при чтении ячейки' }
