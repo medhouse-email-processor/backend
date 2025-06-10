@@ -13,7 +13,8 @@ pino.level = 'silent'
 exports.connectToImap = async () => {
     // console.log('Подключение к IMAP серверу...')
     const client = new ImapFlow({
-        host: 'pkz41.hoster.kz',
+        // host: 'pkz41.hoster.kz',
+        host: 'mail.testmedical.kz',
         port: 993,
         secure: true,
         tls: { rejectUnauthorized: false },
